@@ -7,6 +7,11 @@ import nested_dict as nd
 
 LND_RISK_FACTOR = 0.000000015
 
+NODES = 100
+EDGES = 4
+RANDOMNESS = 65
+TRANSACTIONS = 1000
+
 def lnd_cost_fun(G, amount, u, v):
     fee = G.edges[v,u]['BaseFee'] + amount * G.edges[v, u]['FeeRate']
     alt = (amount+fee) * G.edges[v, u]["Delay"] * LND_RISK_FACTOR + fee
@@ -197,7 +202,7 @@ def route(G,path,delay,amt,ads,amt1,file):
     G1 = G.copy()
     cost = amt
     comp_attack = []
-    anon_sets =[]
+    anon_sets = {}
     attacked = 0
     G.edges[path[0],path[1]]["Balance"] -= amt
     G.edges[path[1],path[0]]["Locked"] = amt
@@ -215,18 +220,17 @@ def route(G,path,delay,amt,ads,amt1,file):
         amt = (amt - G.edges[path[i], path[i+1]]["BaseFee"]) / (1 + G.edges[path[i], path[i+1]]["FeeRate"])
         if path[i] in ads:
             attacked+=1
-            dests = []
+            dests = {}
             delay1 = delay - G.edges[path[i],path[i+1]]["Delay"]
             B,flag = dest_reveal_new(G1,path[i],delay1,amt,path[i-1],path[i+1])
             for j in B:
-                dest = {j:B[j]}
-                dests.append(dest)
+                dests[j] = B[j]
             if flag == True:
                 comp_attack.append(1)
             else:
                 comp_attack.append(0)
-            anon_set = {path[i]:dests}
-            anon_sets.append(anon_set)
+            anon_set = dests
+            anon_sets[path[i]] =anon_set
         if(G.edges[path[i],path[i+1]]["Balance"] >= amt):
             G.edges[path[i], path[i+1]]["Balance"] -= amt
             G.edges[path[i+1], path[i]]["Locked"] = amt
@@ -237,12 +241,11 @@ def route(G,path,delay,amt,ads,amt1,file):
                 while j >= 0:
                     G.edges[path[j + 1], path[j]]["Balance"] += G.edges[path[j + 1], path[j]]["Locked"]
                     G.edges[path[j + 1], path[j]]["Locked"] = 0
-                    if j==0:
-                        transaction = {"sender": path[0], "recipient": path[len(path)-1], "path": path, "delay": delay,
-                                       "amount": amt1, "Cost": cost, "attacked": attacked,
-                                       "success": True, "anon_sets": anon_sets, "comp_attack": comp_attack}
-                        transactions.append(transaction)
                     j = j-1
+                transaction = {"sender": path[0], "recipient": path[len(path)-1], "path": path, "delay": delay,
+                                "amount": amt1, "Cost": cost, "attacked": attacked,
+                                "success": True, "anon_sets": anon_sets, "comp_attack": comp_attack}
+                transactions.append(transaction)
                 return True
             delay = delay - G.edges[path[i],path[i+1]]["Delay"]
             i += 1
@@ -251,17 +254,17 @@ def route(G,path,delay,amt,ads,amt1,file):
             while j >= 0:
                 G.edges[path[j],path[j+1]]["Balance"] += G.edges[path[j+1],path[j]]["Locked"]
                 G.edges[path[j + 1], path[j]]["Locked"] = 0
-                if j==0:
-                    transaction = {"sender": path[0], "recipient": path[len(path)-1], "path": path, "delay": delay,
-                                   "amount": amt1, "Cost": cost, "attacked": attacked,
-                                   "success": False, "anon_sets": anon_sets, "comp_attack": comp_attack}
-                    transactions.append(transaction)
                 j = j-1
+            transaction = {"sender": path[0], "recipient": path[len(path)-1], "path": path, "delay": delay,
+                            "amount": amt1, "Cost": cost, "attacked": attacked,
+                            "success": False, "anon_sets": anon_sets, "comp_attack": comp_attack}
+            transactions.append(transaction)
             return False
 
-G = nx.barabasi_albert_graph(100,2,65)
+G = nx.barabasi_albert_graph(NODES,EDGES,RANDOMNESS)
 G = nx.DiGraph(G)
 
+rn.seed(RANDOMNESS)
 for [u,v] in G.edges():
     G.edges[u,v]["Delay"] = 10 * rn.randint(1,10)
     G.edges[u,v]["BaseFee"] = 0.1 * rn.randint(1,10)
@@ -287,7 +290,7 @@ print("Adversaries:",ads)
 
 i=0
 file = "results.json"
-while (i < 100):
+while (i < TRANSACTIONS):
     u = -1
     v = -1
     while (u == v or (u not in G.nodes()) or (v not in G.nodes())):
