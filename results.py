@@ -12,7 +12,7 @@ def perc(num):
 
 
 # pick file used in paper
-# file = "results/barabasi-dovetail-1000-500-5.json"
+# file = "results/paper/barabasi-dovetail-1000-500-5.json"
 
 file = "results.json"
 
