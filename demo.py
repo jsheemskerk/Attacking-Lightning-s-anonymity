@@ -17,7 +17,7 @@ def lnd_cost_fun(G, amount, u, v):
     alt = (amount+fee) * G.edges[v, u]["Delay"] * LND_RISK_FACTOR + fee
     return alt
 
-def Dijkstra(G,source,target,amt,cost_function):
+def Dijkstra(G,source,target,amt,cost_function, payment_source = True, target_delay = 0):
     paths = {}
     dist = {}
     delay = {}
@@ -30,7 +30,7 @@ def Dijkstra(G,source,target,amt,cost_function):
     visited = set()
     pq = PriorityQueue()
     dist[target] = 0
-    delay[target] = 0
+    delay[target] = target_delay
     paths[target] = [target]
     amount[target] = amt
     pq.put((dist[target],target))
@@ -42,7 +42,7 @@ def Dijkstra(G,source,target,amt,cost_function):
             continue
         visited.add(curr)
         for [v,curr] in G.in_edges(curr):
-            if v == source and G.edges[v,curr]["Balance"]>=amount[curr]:
+            if payment_source and v == source and G.edges[v,curr]["Balance"]>=amount[curr]:
                 cost = dist[curr] + amount[curr]*G.edges[v,curr]["Delay"]*LND_RISK_FACTOR
                 if cost < dist[v]:
                     dist[v] = cost
@@ -50,16 +50,48 @@ def Dijkstra(G,source,target,amt,cost_function):
                     delay[v] = G.edges[v, curr]["Delay"] + delay[curr]
                     amount[v] = amount[curr]
                     pq.put((dist[v],v))
-            if(G.edges[v, curr]["Balance"] + G.edges[curr, v]["Balance"] >= amount[curr]) and v not in visited and v!=source:
-                cost = dist[curr] + cost_function(G,amount[curr],curr,v)
-                if cost < dist[v]:
-                    dist[v] = cost
-                    paths[v] = [v] + paths[curr]
-                    delay[v] = G.edges[v,curr]["Delay"] + delay[curr]
-                    amount[v] = amount[curr] + G.edges[v,curr]["BaseFee"] + amount[curr]*G.edges[v,curr]["FeeRate"]
-                    pq.put((dist[v],v))
+            if(G.edges[v, curr]["Balance"] + G.edges[curr, v]["Balance"] >= amount[curr]) and v not in visited:
+                if (v != source or not payment_source):
+                    cost = dist[curr] + cost_function(G,amount[curr],curr,v)
+                    if cost < dist[v]:
+                        dist[v] = cost
+                        paths[v] = [v] + paths[curr]
+                        delay[v] = G.edges[v,curr]["Delay"] + delay[curr]
+                        amount[v] = amount[curr] + G.edges[v,curr]["BaseFee"] + amount[curr]*G.edges[v,curr]["FeeRate"]
+                        pq.put((dist[v],v))
     return [],-1,-1,-1
 
+def path_segment_routing(G, source, dest, amt, cost_function):
+
+    # check optimal path
+    optpath, optdelay, optamount, optdist = Dijkstra(G, source, dest, amt, cost_function)
+
+    # if nodes are directly connected, return immediately
+    if (len(optpath) == 2):
+        return source, optpath, optdelay, optamount, optdist
+
+    # choose best dovetail based on fewest hops
+    best = 100
+    bestpath = []
+    bestdelay = -1
+    bestamount = -1
+    bestdist = -1
+    bestdovetail = -1
+    # try 5 dovetail candidates
+    for i in range(5):
+        dovetail = source
+        while (dovetail in optpath):
+            dovetail = rn.choice(list(G.nodes))
+        path, delay, amount, dist = route_with_dove(G, source, dovetail, dest, amt, cost_function )
+        # pick candidate with shortest route & no loops
+        if (len(path)> 0 and len(path) < best and len(path) == len(set(path))):
+            best = len(path)
+            bestpath = path
+            bestdelay = delay
+            bestamount = amount
+            bestdist = dist
+            bestdovetail = dovetail
+    return bestdovetail, bestpath, bestdelay, bestamount, bestdist
 
 def route_with_dove(G, source, dove, dest, amt, cost_function):
     path2, delay2, amount2, dist2 = Dijkstra(G, dove, dest, amt, cost_function, False)
