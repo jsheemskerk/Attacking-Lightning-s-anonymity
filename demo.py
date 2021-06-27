@@ -12,6 +12,8 @@ EDGES = 4
 RANDOMNESS = 65
 TRANSACTIONS = 1000
 
+file = "results.json"
+
 def lnd_cost_fun(G, amount, u, v):
     fee = G.edges[v,u]['BaseFee'] + amount * G.edges[v, u]['FeeRate']
     alt = (amount+fee) * G.edges[v, u]["Delay"] * LND_RISK_FACTOR + fee
@@ -94,23 +96,29 @@ def path_segment_routing(G, source, dest, amt, cost_function):
     return bestdovetail, bestpath, bestdelay, bestamount, bestdist
 
 def route_with_dove(G, source, dove, dest, amt, cost_function):
+
+    # route second path segment
     path2, delay2, amount2, dist2 = Dijkstra(G, dove, dest, amt, cost_function, False)
 
+    # return if infeasible
     if (len(path2) == 0):
         return [],-1,-1,-1
     
+    # route first path segment, using new delay and amount
     path1, delay1, amount1, dist1 = Dijkstra(G, source, dove, amount2, cost_function, True, delay2)
 
+    # return if infeasible
     if (len(path1) == 0):
         return [],-1,-1,-1
 
+    # append paths
     fullpath = path1 + path2[1:]
     fulldelay = delay1
     fullamount = amount1 
     fulldist = dist1 + dist2
     return fullpath, fulldelay, fullamount, fulldist
 
-def dest_reveal_new(G,adversary,delay,amount,pre,next):
+def dest_reveal_new(G,adversary,delay,amount,pre,next, attack_position):
     T = nd.nested_dict()
     flag1 = True
     anon_sets = nd.nested_dict()
@@ -160,7 +168,8 @@ def dest_reveal_new(G,adversary,delay,amount,pre,next):
         a = T[level]["amounts"]
         v = T[level]["visited"]
         for i in range(0, len(t)):
-            if(d[i] == 0):
+            # shadow routing when in first path segment
+            if(attack_position ==0 and d[i] >= 0 or attack_position > 0 and d[i] == 0):
                 path = []
                 level1 = level
                 path.append(T[level1]["nodes"][i])
@@ -170,17 +179,27 @@ def dest_reveal_new(G,adversary,delay,amount,pre,next):
                     path.append(T[level1]["nodes"][loc])
                     loc = T[level1]["previous"][loc]
                 path.reverse()
-                path = [pre,adversary]+path
-                if (len(path) == len(set(path))):
-                    amt = a[i]
-                    pot = path[len(path) - 1]
-                    sources = deanonymize(G,pot,path,amt,lnd_cost_fun)
+                # if attacker is the dovetail, look for source where the adversary is the target
+                if (attack_position == 1):
+                    pot = path[-1]
+                    advamt = amount + lnd_cost_fun(G, amount, adversary, path[0])
+                    advdel = delay + G.edges[adversary,path[0]]["Delay"]
+                    sources = deanonymize(G, adversary, [pre, adversary], advamt, advdel, lnd_cost_fun)
                     if sources != None:
                         anon_sets[pot] = list(sources)
+                else:
+                    path = [pre,adversary]+path
+                    if (len(path) == len(set(path))):
+                        amt = a[i]
+                        dl = d[i]
+                        pot = path[len(path) - 1]
+                        sources = deanonymize(G,pot,path,amt,dl,lnd_cost_fun)
+                        if sources != None:
+                            anon_sets[pot] = list(sources)
         level = level - 1
     return anon_sets,flag1
 
-def deanonymize(G,target,path,amt,cost_function):
+def deanonymize(G,target,path,amt,dl, cost_function):
     pq = PriorityQueue()
     delays = {}
     costs = {}
@@ -194,7 +213,7 @@ def deanonymize(G,target,path,amt,cost_function):
     sources = []
     pre = path[0]
     adv = path[1]
-    nxt = path[2]
+    # nxt = path[2]
     for node in G.nodes():
         previous[node] = -1
         delays[node] = -1
@@ -207,7 +226,7 @@ def deanonymize(G,target,path,amt,cost_function):
     dists[target] = 0
     paths[target] = [target]
     costs[target] = amt
-    delays[target] = 0
+    delays[target] = dl
     pq.put((dists[target],target))
     flag1 = 0
     flag2 = 0
@@ -248,11 +267,12 @@ def deanonymize(G,target,path,amt,cost_function):
     sources = set(sources)
     return sources
 
-def route(G,path,delay,amt,ads,amt1,file):
+def route(G,path,dove, dove_connectivity, delay,amt,ads,amt1,file):
     G1 = G.copy()
     cost = amt
     comp_attack = []
     anon_sets = {}
+    attack_positions = {}
     attacked = 0
     G.edges[path[0],path[1]]["Balance"] -= amt
     G.edges[path[1],path[0]]["Locked"] = amt
@@ -261,9 +281,8 @@ def route(G,path,delay,amt,ads,amt1,file):
     if len(path) == 2:
         G.edges[path[1],path[0]]["Balance"] += G.edges[path[1],path[0]]["Locked"]
         G.edges[path[1], path[0]]["Locked"] = 0
-        transaction = {"sender": path[0], "recipient": path[1], "path" : path, "delay": delay, "amount":amt1,
-                       "Cost": cost, "attacked":0,
-                    "success":True,"anon_sets":anon_sets,"comp_attack":comp_attack}
+        transaction = {"sender": path[0], "recipient": path[1], "dovetail": dove, "dove_connectivity": dove_connectivity, "path" : path, "attack_position":attack_positions,
+        "delay": delay, "amount":amt1, "Cost": cost, "attacked":0, "success":True,"anon_sets":anon_sets,"comp_attack":comp_attack}
         transactions.append(transaction)
         return True
     while(i < len(path)-1):
@@ -272,7 +291,16 @@ def route(G,path,delay,amt,ads,amt1,file):
             attacked+=1
             dests = {}
             delay1 = delay - G.edges[path[i],path[i+1]]["Delay"]
-            B,flag = dest_reveal_new(G1,path[i],delay1,amt,path[i-1],path[i+1])
+
+            # find attack position (assumes adversary always guesses correctly)
+            if (path.index(dove) < path.index(path[i])):
+                attack_position = 2
+            if (path.index(dove) > path.index(path[i])):
+                attack_position = 0
+            if (path.index(dove) == path.index(path[i])):
+                attack_position = 1
+
+            B,flag = dest_reveal_new(G1,path[i],delay1,amt,path[i-1],path[i+1], attack_position)
             for j in B:
                 dests[j] = B[j]
             if flag == True:
@@ -281,6 +309,7 @@ def route(G,path,delay,amt,ads,amt1,file):
                 comp_attack.append(0)
             anon_set = dests
             anon_sets[path[i]] =anon_set
+            attack_positions[path[i]] = attack_position
         if(G.edges[path[i],path[i+1]]["Balance"] >= amt):
             G.edges[path[i], path[i+1]]["Balance"] -= amt
             G.edges[path[i+1], path[i]]["Locked"] = amt
@@ -292,9 +321,8 @@ def route(G,path,delay,amt,ads,amt1,file):
                     G.edges[path[j + 1], path[j]]["Balance"] += G.edges[path[j + 1], path[j]]["Locked"]
                     G.edges[path[j + 1], path[j]]["Locked"] = 0
                     j = j-1
-                transaction = {"sender": path[0], "recipient": path[len(path)-1], "path": path, "delay": delay,
-                                "amount": amt1, "Cost": cost, "attacked": attacked,
-                                "success": True, "anon_sets": anon_sets, "comp_attack": comp_attack}
+                transaction = {"sender": path[0], "recipient": path[len(path)-1], "dovetail": dove, "dove_connectivity": dove_connectivity, "path": path, "attack_position": attack_positions,
+                 "delay": delay, "amount": amt1, "Cost": cost, "attacked": attacked, "success": True, "anon_sets": anon_sets, "comp_attack": comp_attack}
                 transactions.append(transaction)
                 return True
             delay = delay - G.edges[path[i],path[i+1]]["Delay"]
@@ -305,16 +333,22 @@ def route(G,path,delay,amt,ads,amt1,file):
                 G.edges[path[j],path[j+1]]["Balance"] += G.edges[path[j+1],path[j]]["Locked"]
                 G.edges[path[j + 1], path[j]]["Locked"] = 0
                 j = j-1
-            transaction = {"sender": path[0], "recipient": path[len(path)-1], "path": path, "delay": delay,
-                            "amount": amt1, "Cost": cost, "attacked": attacked,
-                            "success": False, "anon_sets": anon_sets, "comp_attack": comp_attack}
+            transaction = {"sender": path[0], "recipient": path[len(path)-1], "dovetail": dove, "dove_connectivity": dove_connectivity, "path": path, "attack_position": attack_positions,
+             "delay": delay, "amount": amt1, "Cost": cost, "attacked": attacked, "success": False, "anon_sets": anon_sets, "comp_attack": comp_attack}
             transactions.append(transaction)
             return False
 
+# barabasi albert graph
 G = nx.barabasi_albert_graph(NODES,EDGES,RANDOMNESS)
+# erdos renyi graph
+# G = nx.erdos_renyi_graph(NODES, 0.04,RANDOMNESS)
+
+# make graphs directed
 G = nx.DiGraph(G)
 
+# make randomness deterministic
 rn.seed(RANDOMNESS)
+
 for [u,v] in G.edges():
     G.edges[u,v]["Delay"] = 10 * rn.randint(1,10)
     G.edges[u,v]["BaseFee"] = 0.1 * rn.randint(1,10)
@@ -339,7 +373,6 @@ for i in range(0,10):
 print("Adversaries:",ads)
 
 i=0
-file = "results.json"
 while (i < TRANSACTIONS):
     u = -1
     v = -1
@@ -353,9 +386,16 @@ while (i < TRANSACTIONS):
         amt = rn.randint(10, 100)
     elif (i % 3 == 2):
         amt = rn.randint(100, 1000)
-    path, delay, amount, dist = Dijkstra(G, u, v, amt, lnd_cost_fun)
+
+    # use new routing protocol:
+    dove, path, delay, amount, dist = path_segment_routing(G, u, v, amt, lnd_cost_fun)
+    
+    # use old routing protocol (Dijkstra LND):
+    #path, delay, amount, dist = Dijkstra(G, u, v, amt, lnd_cost_fun)
+    #dove = u
+
     if (len(path) > 0):
-        T = route(G, path, delay, amount, ads, amt, file)
+        T = route(G, path, dove, len(G.in_edges(dove)), delay, amount, ads, amt, file)
     if len(path) > 2:
         print(i,path, "done")
         i += 1
