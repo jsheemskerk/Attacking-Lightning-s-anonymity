@@ -1,3 +1,27 @@
+# Path Segment Routing Attack repository
+
+This repository is forked from the 'Attacking Lightning's Anonymity' repo, modified to simulate an attack on the 'Path Segment Routing' algorithm described in my paper.
+
+To read out the evaluation metrics used in the results section, you can use the 'results.py' file.
+This file requires some transaction data.
+Either this data can be generated, or oyu can use the pre-generated data used in the paper.
+This data can be found in 'results/paper'.
+
+To read the data from these simulations, simply change line 15 to the path of the file you would like to read.
+The files used in the paper have the following format: `GRAPHTYPE-ROUTINGTYPE-TRANSACTIONAMOUNT-NODES-EDGES.json`.
+
+
+For example, for the Barabasi-Albert graph with n=1000 and m=2, we have already simulated 1000 transactions.
+To view these results, change the line to:
+
+```
+file = results/paper/barabasi-dovetail-1000-100-2.json
+
+```
+
+
+Below is the unchanged README from the original repository.
+
 # Attacking Lightning's Anonymity
 
 An attack that enables an intermediary to break the anonymity of the source and destination of a trannsaction in the Lightning network. 
