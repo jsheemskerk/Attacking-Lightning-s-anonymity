@@ -4,7 +4,7 @@ This repository is forked from the 'Attacking Lightning's Anonymity' repo, modif
 
 To read out the evaluation metrics used in the results section, you can use the 'results.py' file.
 This file requires some transaction data.
-Either this data can be generated, or oyu can use the pre-generated data used in the paper.
+Either this data can be generated, or you can use the pre-generated data used in the paper.
 This data can be found in 'results/paper'.
 
 To read the data from these simulations, simply change line 15 to the path of the file you would like to read.
@@ -18,6 +18,27 @@ To view these results, change the line to:
 file = "results/paper/barabasi-dovetail-1000-100-2.json"
 ```
 
+
+If you want to generate data yourself, use the `demo.py` file.
+On lines 10-13, you can change the parameters used.
+On line 15, you can change the filename where the results are stored.
+Before storing the files, the file needs to be initialized as an empty array.
+
+For example, if using the file name `results.json`, first initialize the file as follows:
+
+```
+echo '[]' > results.json
+```
+
+To switch between the Erdos-Renyi and Barabasi-Albert graph, comment/uncomment line 342 and 344.
+
+To switch between routing algorithms, comment/uncomment line 391 and 394.
+When using Dijkstra (LND), it is important to also give the sender node as the 'dove'.
+Doing so gives the `path 2` attack type, which is identical to the unmodified attack from the original repository.
+
+For the results found in the `results/paper` folder, the `RANDOMNESS` parameter should be `65`.
+
+To get different graphs/transactions, simply change this value.
 
 Below is the unchanged README from the original repository.
 

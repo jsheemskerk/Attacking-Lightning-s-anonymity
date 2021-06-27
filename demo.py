@@ -341,7 +341,7 @@ def route(G,path,dove, dove_connectivity, delay,amt,ads,amt1,file):
 # barabasi albert graph
 G = nx.barabasi_albert_graph(NODES,EDGES,RANDOMNESS)
 # erdos renyi graph
-# G = nx.erdos_renyi_graph(NODES, 0.04,RANDOMNESS)
+# G = nx.erdos_renyi_graph(NODES, EDGES/NODES,RANDOMNESS)
 
 # make graphs directed
 G = nx.DiGraph(G)
