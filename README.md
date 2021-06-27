@@ -15,8 +15,7 @@ For example, for the Barabasi-Albert graph with n=1000 and m=2, we have already 
 To view these results, change the line to:
 
 ```
-file = results/paper/barabasi-dovetail-1000-100-2.json
-
+file = "results/paper/barabasi-dovetail-1000-100-2.json"
 ```
 
 
