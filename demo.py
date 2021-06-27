@@ -60,6 +60,24 @@ def Dijkstra(G,source,target,amt,cost_function):
                     pq.put((dist[v],v))
     return [],-1,-1,-1
 
+
+def route_with_dove(G, source, dove, dest, amt, cost_function):
+    path2, delay2, amount2, dist2 = Dijkstra(G, dove, dest, amt, cost_function, False)
+
+    if (len(path2) == 0):
+        return [],-1,-1,-1
+    
+    path1, delay1, amount1, dist1 = Dijkstra(G, source, dove, amount2, cost_function, True, delay2)
+
+    if (len(path1) == 0):
+        return [],-1,-1,-1
+
+    fullpath = path1 + path2[1:]
+    fulldelay = delay1
+    fullamount = amount1 
+    fulldist = dist1 + dist2
+    return fullpath, fulldelay, fullamount, fulldist
+
 def dest_reveal_new(G,adversary,delay,amount,pre,next):
     T = nd.nested_dict()
     flag1 = True
