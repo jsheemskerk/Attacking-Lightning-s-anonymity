@@ -1,146 +1,323 @@
-import csv
-import ast
+import json
+from networkx.algorithms.distance_measures import center
+import numpy as np
 import nested_dict as nd
 import matplotlib.pyplot as plt
-import numpy as np
-import json
-import seaborn as sns
-import networkx as nx
-import populate_graph as pg
+
+
+
+def perc(num):
+    return round(num * 100, 2)
+
+
+
+# pick file used in paper
+# file = "results/barabasi-dovetail-1000-500-5.json"
 
 file = "results.json"
 
-# Open the results file and transfer the in an array
 results = []
 with open(file,'r') as json_file:
     results_json = json.load(json_file)
 results.append(results_json)
 
 
-path = []
 
-# Number of Transactions
-num_transactions = 0
+tx_success = 0
+tx_total = 0
+tx_attacked = 0
+tx_path_lengths = 0
+tx_fee = 0
+tx_hops = 0
 
-# Number of transactions attacked
-num_attacked = 0
+path1_attack = 0
+path2_attack = 0
+center_attack = 0
 
-# Total number of attack instances
-num_attacks = 0
+path1_sender_size = 0
+path1_sender_of_dest_size = 0
+path1_rec_size = 0
+path1_pair_found = 0
+path2_sender_size = 0
+path2_sender_of_dest_size = 0
+path2_rec_size = 0
+path2_pair_found = 0
+center_sender_size = 0
+center_sender_of_dest_size = 0
+center_rec_size = 0
+center_pair_found = 0
+position_false_guess = 0
 
-# Array storing the number of recipients for each attack instance, followed by those that that had phase I completed and not respectively
-dest_count = []
-dest_count_comp = []
-dest_count_incomp = []
-
-# Arrays storing the number of senders for each attack instance, followed by those that that had phase I completed and not respectively
-source_count = []
-source_count_comp = []
-source_count_incomp = []
-
-# Arrays storing the distances of the recipient and the sender from the adversary respectively
-dist_dest = []
-dist_source = []
-
-# Number of attack instances in which the sender and recipient pair was successfully found
 pair_found = 0
+pair_not_found = 0
+pairs_total = 0
 
-# Number of attack instances that completed phase I
-num_comp = 0
+path1_pair_total = 0
+path2_pair_total = 0
+center_pair_total = 0
 
-# Number of attack instances for which the size of the recipient set was 1 and similarly for the sender
-sing_dest = 0
-sing_source = 0
 
-# Number of attack instances having both the sender and recipient sets singular
-sing_all = 0
+path1_sing_dest = 0
+path1_sing_dest_fp = 0
+path2_sing_dest = 0
+path2_sing_dest_fp = 0
+center_sing_dest = 0
+center_sing_dest_fp = 0
 
-# Number of attack instances having atleast one of the sender and recipient sets singular
-sing_any = 0
-ads = [2634, 5422, 8075, 5347, 1083, 5093, 4326, 4126, 2836, 5361, 10572, 5389, 3599, 9819, 4828, 3474, 8808, 93, 9530,
-       9515, 2163]
+path1_sing_source = 0
+path1_sing_source_fp = 0
+path2_sing_source = 0
+path2_sing_source_fp = 0
+center_sing_source = 0
+center_sing_source_fp = 0
 
-# Dictionary for storing the number of attack instances of each adversary
-ad_attacks = {}
-for ad in ads:
-    ad_attacks[ad] = 0
-    
-# Go over the results and update each of the above variables for each attack instance
+path1_sing_either = 0
+path1_sing_either_fp = 0
+path2_sing_either = 0
+path2_sing_either_fp = 0
+center_sing_either = 0
+center_sing_either_fp = 0
+
+
+connectivities = np.zeros(0)
+pairssizes = np.zeros(0)
+conhops = np.zeros(0)
+
 for i in results:
     for j in i:
         for k in j:
-            if k["path"]!=path:
-                path = k["path"]
-                num_transactions+=1
-                if k["attacked"]>0:
-                    num_attacked+=1
-                    anon_sets = k["anon_sets"]
-                    for ad in anon_sets:
-                        num_attacks+=1
-                        num = -1
-                        for adv in ad:
-                            sources = []
-                            ad_attacks[int(adv)]+=1
-                            num+=1
-                            for dest in ad[adv]:
-                                for rec in dest:
-                                    for tech in dest[rec]:
-                                        if int(rec) == k["recipient"] and k["sender"] in dest[rec][tech]:
-                                            pair_found+=1
-                                        for s in dest[rec][tech]:
-                                            sources.append(s)
-                            if len(set(sources))>0:
-                                ind = k["path"].index(int(adv))
-                                dist_dest.append(len(k["path"])-1-ind)
-                                dist_source.append(ind)
-                                if(k["comp_attack"][num] == 1):
-                                    dest_count_comp.append(len(ad[adv]))
-                                    num_comp+=1
-                                else:
-                                    dest_count_incomp.append(len(ad[adv]))
-                                dest_count.append(len(ad[adv]))
-                                if(len(ad[adv]) == 1):
-                                    sing_dest+=1
-                                if (k["comp_attack"][num] == 1):
-                                    source_count_comp.append(len(set(sources)))
-                                else:
-                                    source_count_incomp.append(len(set(sources)))
-                                source_count.append(len(set(sources)))
-                                if(len(set(sources))==1):
-                                    sing_source+=1
-                                if(len(ad[adv]) ==1) or(len(set(sources))==1):
-                                    sing_any+=1
-                                if (len(ad[adv]) == 1) and (len(set(sources)) == 1):
-                                    sing_all += 1
-# print(num_transactions,num_attacked,num_attacks,pair_found)
-# print(source_count)
-# print(dest_count)
+            tx_total += 1
+            tx_path_lengths += len(k["path"])
+            tx_fee += k["Cost"] - k["amount"]
+            tx_hops += (len(k["path"]) - 1)
+            if k["success"]:
+                tx_success += 1
 
-# Print the metrics
-print(num_attacked/num_transactions,num_attacks/num_attacked)
-print(np.corrcoef(dest_count,dist_dest),np.corrcoef(source_count,dist_source))
-print(sing_source/num_attacks,sing_dest/num_attacks,sing_any/num_attacks,sing_all/num_attacks)
-print(num_comp/num_attacks)
-print(num_transactions)
+            if k["attacked"]:
+                tx_attacked += 1
+
+            for (a,v) in k["attack_position"].items():
+                # print("connectivity:", k["dove_connectivity"])
+                if (k["dove_connectivity"] >= len(connectivities)):
+                    connectivities.resize(k["dove_connectivity"] + 1, refcheck= False)
+                    pairssizes.resize(k["dove_connectivity"] + 1, refcheck = False)
+                    conhops.resize(k["dove_connectivity"] + 1, refcheck = False)
+                connectivities[k["dove_connectivity"]] += 1
+                attacker = int(a)
+                dove = k['dovetail']
+                sender = k['sender']
+                recipient = k['recipient']
+
+                guess_position = k['attack_position'][a]
+                index_dove = k["path"].index(dove)
+                index_attacker = k["path"].index(attacker)
+                if (dove == attacker):
+                    real_position = 1
+                elif (index_attacker < index_dove):
+                    real_position = 0
+                else:
+                    real_position = 2
+                
+
+                if (guess_position != real_position):
+                    position_false_guess += 1
+                else:
+
+                    anonset = k["anon_sets"][a]
+                    recset = list(anonset.keys())
+                    senderset = []
+                    pairs = 0
+                    for senders in anonset.values():
+                        for s in senders:
+                            pairs += 1
+                            pairs_total += 1
+                            if s not in senderset:
+                                senderset.append(s)
+                    
+                    pairssizes[k["dove_connectivity"]] += pairs
+                    conhops[k["dove_connectivity"]] += (len(k["path"]) - 1)
+
+                    source = sender if real_position != 2 else dove
+                    dest = recipient if real_position != 0 else dove
+
+                    if (real_position == 0):
+                        path1_pair_total += pairs
+                        path1_sender_size += len(senderset)
+                        if (str(dest) in recset):
+                            path1_sender_of_dest_size += len(anonset[str(dest)])
+                            if (source in anonset[str(dest)]):
+                                path1_pair_found += 1
+                        path1_rec_size += len(recset)
+                        path1_attack += 1
 
 
-# Plot the sender and recipient anonymity sets respectively
-plot1 = sns.ecdfplot(data = dest_count_comp,legend='Phase I complete',marker = '|',linewidth = 1.5, linestyle = ':')
-plot2 = sns.ecdfplot(data = dest_count_incomp,legend='Phase I incomplete',marker = '|',linewidth = 1.5, linestyle = ':')
-plot1.set(xscale='log')
-plot2.set(xscale='log')
-plt.legend(('Phase I complete','Phase I incomplete'),scatterpoints=1,loc='lower right',ncol=1,fontsize=16)
-plt.xlabel("Size of anonymity set")
-plt.ylabel("CDF")
+                        Either = False
+                        if (len(recset) == 1):
+                            if (int(recset[0]) == dest):
+                                Either = True
+                                path1_sing_dest += 1
+                            else:
+                                path1_sing_dest_fp += 1
+                        if (len(senderset) == 1):
+                            if (senderset[0] == source):
+                                Either = True
+                                path1_sing_source += 1
+                            else:
+                                path1_sing_source_fp += 1
+                        if Either:
+                            path1_sing_either += 1
+                            
+
+
+                    elif (real_position == 1):
+                        center_pair_total += pairs
+                        center_sender_size += len(senderset)
+                        if (str(dest) in recset):
+                            center_sender_of_dest_size += len(anonset[str(dest)])
+                            if (source in anonset[str(dest)]):
+                                center_pair_found += 1
+                        center_rec_size += len(recset)
+                        center_attack += 1
+
+                        Either = False
+                        if (len(recset) == 1):
+                            if (int(recset[0]) == dest):
+                                Either = True
+                                center_sing_dest += 1
+                            else:
+                                center_sing_dest_fp += 1
+                        if (len(senderset) == 1):
+                            if (senderset[0] == source):
+                                Either = True
+                                center_sing_source += 1
+                            else:
+                                center_sing_source_fp += 1
+                        if Either:
+                            center_sing_either += 1
+                    else:
+                        path2_pair_total += pairs
+                        path2_sender_size += len(senderset)
+                        if (str(dest) in recset):
+                            path2_sender_of_dest_size += len(anonset[str(dest)])
+                            if (source in anonset[str(dest)]):
+                                path2_pair_found += 1
+                        path2_rec_size += len(recset)
+                        path2_attack += 1
+
+                        Either = False
+                        if (len(recset) == 1):
+                            if (int(recset[0]) == dest):
+                                Either = True
+                                path2_sing_dest += 1
+                            else:
+                                path2_sing_dest_fp += 1
+                        if (len(senderset) == 1):
+                            if (senderset[0] == source):
+                                Either = True
+                                path2_sing_source += 1
+                            else:
+                                path2_sing_source_fp += 1
+                        if Either:
+                            path2_sing_either += 1
+                    
+                    if (str(dest) in recset and source in anonset[str(dest)]):
+                            pair_found += 1
+                    else:
+                        pair_not_found += 1
+                        path = k["path"]
+
+                        # check for faulty transactions
+                        # iss = path.index(source)
+                        # ia = path.index(attacker)
+                        # id = path.index(dest)
+
+                        # if (ia - iss < 4 and id - ia < 4):
+                        #     print(k)
+                        #     print(f"{real_position} {path.index(source)} {path.index(attacker)} {path.index(dest)}")
+                    
+print(f"Total number of transactions: {tx_total}")
+print("Pairs found:",pair_found)
+print("Pairs missed:",pair_not_found)
+
+
+correct_attacks = path1_attack + path2_attack + center_attack
+print(f"Total number of (correct) attacks: {correct_attacks}")
+total_pairs = path1_pair_total + path2_pair_total + center_pair_total
+# print(f"Successfull position guesses: {correct_attacks}, failed: {position_false_guess}")
+# print(f"Percentage correct: {perc(correct_attacks/(correct_attacks + position_false_guess))}%")
+print(f"Path 1 attacks: {path1_attack}")
+if path1_attack == 0: path1_attack = 1
+print(f"Path 1 average sender size: {path1_sender_size/path1_attack}")
+print(f"Path 1 average sender size for correct dest: {path1_sender_of_dest_size/path1_attack}")
+print(f"Path 1 average rec (dovetail) size: {path1_rec_size/path1_attack}")
+avg_pair_path1 = path1_pair_total/path1_attack
+print(f"Path 1 average number of pairs: {avg_pair_path1}")
+print(f"Path 1 correct pair present: {perc(path1_pair_found / path1_attack)}%")
+print(f"Path 1 singular dest: {perc(path1_sing_dest / path1_attack)}%")
+print(f"Path 1 singular dest fp: {perc(path1_sing_dest_fp / path1_attack)}%")
+print(f"Path 1 singular source: {perc(path1_sing_source / path1_attack)}%")
+print(f"Path 1 singular source fp: {perc(path1_sing_source_fp / path1_attack)}%")
+print(f"Path 1 either singular: {perc(path1_sing_either / path1_attack)}%")
+print(f"Path 2 attacks: {path2_attack}")
+if path2_attack == 0: path2_attack = 1
+print(f"Path 2 average sender (dovetail) size: {path2_sender_size/path2_attack}")
+print(f"Path 2 average sender (dovetail) size for correct dest: {path2_sender_of_dest_size/path2_attack}")
+print(f"Path 2 average rec size: {path2_rec_size/path2_attack}")
+avg_pair_path2 = path2_pair_total/path2_attack
+print(f"Path 2 average number of pairs: {avg_pair_path2}")
+print(f"Path 2 correct pair present: {perc(path2_pair_found / path2_attack)}%")
+print(f"Path 2 singular dest: {perc(path2_sing_dest / path2_attack)}%")
+print(f"Path 2 singular dest fp: {perc(path2_sing_dest_fp / path2_attack)}%")
+print(f"Path 2 singular source: {perc(path2_sing_source / path2_attack)}%")
+print(f"Path 2 singular source fp: {perc(path2_sing_source_fp / path2_attack)}%")
+print(f"Path 2 either singular: {perc(path2_sing_either / path2_attack)}%")
+print(f"Center attacks: {center_attack}")
+if center_attack == 0: center_attack = 1
+print(f"Center average sender size: {center_sender_size/center_attack}")
+print(f"Center average sender size for correct dest: {center_sender_of_dest_size/center_attack}")
+print(f"Center average rec size: {center_rec_size/center_attack}")
+avg_pair_center = center_pair_total/center_attack
+print(f"Center average number of pairs: {avg_pair_center}")
+print(f"Center correct pair present: {perc(center_pair_found / center_attack)}%")
+print(f"Center singular dest: {perc(center_sing_dest / center_attack)}%")
+print(f"Center singular dest fp: {perc(center_sing_dest_fp / center_attack)}%")
+print(f"Center singular source: {perc(center_sing_source / center_attack)}%")
+print(f"Center singular source fp: {perc(center_sing_source_fp / center_attack)}%")
+print(f"Center either singular: {perc(center_sing_either / center_attack)}%")
+
+print(f"Total average number of pairs {pairs_total/correct_attacks}")
+print(f"Total average number of pairs {(avg_pair_path1 * path1_attack + avg_pair_path2 * path2_attack+ avg_pair_center * center_attack) / correct_attacks }")
+
+
+print(f"Avg hops: {tx_hops / tx_total}")
+print(f"Avg fee: {tx_fee / tx_total}")
+print(f"Transaction success rate: {perc(tx_success / tx_total)}%")
+print(f"Transactions attacked: {perc(tx_attacked / tx_total)}%")
+
+
+
+print(connectivities)
+avgpairs = pairssizes / connectivities
+avghops = conhops / connectivities
+avgpairs = np.nan_to_num(avgpairs)
+avghops = np.nan_to_num(avghops)
+print(connectivities)
+print(avgpairs)
+print(conhops)
+
+con = np.arange(len(connectivities))
+
+plt.figure()
+plt.xlabel('Connectivity of Dovetail node', fontsize=12)
+plt.ylabel('$AVG_{pair}$', fontsize=12)
+plt.hist(con, weights=avgpairs, bins=len(avgpairs)//2)
+plt.ticklabel_format(axis='both',style='sci')
+plt.figure()
+plt.xlabel('Connectivity of Dovetail node', fontsize=12)
+plt.ylabel('$N_{att}$', fontsize=12)
+plt.hist(con, weights=connectivities, bins=len(connectivities))
+plt.figure()
+plt.xlabel('Connectivity of Dovetail node', fontsize=12)
+plt.ylabel('$AVG_{hops}$', fontsize=12)
+plt.hist(con, weights=avghops, bins=len(avghops))
 plt.show()
-
-plot1 = sns.ecdfplot(data = source_count_comp,legend='Phase I complete',marker = '|',linewidth = 1.5, linestyle = ':')
-plot2 = sns.ecdfplot(data = source_count_incomp,legend='Phase I incomplete',marker = '|',linewidth = 1.5, linestyle = ':')
-plot1.set(xscale='log')
-plot2.set(xscale='log')
-plt.legend(('Phase I complete','Phase I incomplete'),scatterpoints=1,loc='lower right',ncol=1,fontsize=16)
-plt.xlabel("Size of anonymity set")
-plt.ylabel("CDF")
-plt.show()
-
-
